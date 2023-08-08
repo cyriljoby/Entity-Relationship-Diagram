@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import go from 'gojs';
 import { json, useParams } from 'react-router-dom';
+import {Md123} from "react-icons/md";
+import MyReactButton from '../components/MyReactButton';
 
 
 const ERD = () => {
@@ -13,9 +15,28 @@ const ERD = () => {
   const [options,setOptions] = useState([])
   const [selected,setSelected] = useState([])
 
-  //After accessing the first manifest, if submanifest remains !=[], this keeps running until completely destructured
+  let copies=[]
+  
+  function showMore(data) {
+    console.log(data)
+    if (data.selectedButtonKey === "Show Less" ) {
+      // If the button says "Show Less", only display the first 5 items
+      data.selectedButtonKey = "Show More"; // Toggle the button text
+      data.items = data.items.slice(0, 5); // Keep only the first 5 items
+      myDiagram.model.updateTargetBindings(data); 
+    } 
+    else {
+      data.selectedButtonKey = "Show Less"; 
+      const originalData = copies.flat().find(entity => entity.key === data.key);
+      data.items = originalData.items
+      myDiagram.model.updateTargetBindings(data);     }
+  
+    // Update the diagram
+  }
+  
+  
+  
   const fetchSubManifests = (subManifests) =>{
-    // console.log(subManifests)
     const fetchPromises = subManifests.map((subManifest) =>
       fetch(`http://localhost:4000/schemaDocuments/${manifest}/${subManifest.definition}`)
         .then((response) => response.json(
@@ -24,7 +45,6 @@ const ERD = () => {
 
     Promise.all(fetchPromises)
       .then((subManifestData) => {
-        console.log(subManifestData[0])
         if (subManifestData[0]?.submanifests?.length>0){
           fetchSubManifests(subManifestData)
         }
@@ -40,18 +60,14 @@ const ERD = () => {
 
   const fetchEntities = async(subManifest, manifestName)=>{
     fetchEntityPromises = []
-    console.log(subManifest)
     for (const entity of subManifest.entities?subManifest.entities:subManifest) {
-      console.log(entity)
       const url = `http://localhost:4000/schemaDocuments/${manifest}/${subManifest?.manifestName ? subManifest.manifestName.split(' CDM manifest')[0] : ''}/${entity.entityPath.split('/')[0]}`;
-      console.log(url)
       const fetchPromise = fetch(url).then((response) => response.json());
       fetchEntityPromises.push(fetchPromise);
     }
 
     try {
       const entityData = await Promise.all(fetchEntityPromises);
-      console.log(entityData)
       destructureEntites(entityData,manifestName?manifestName:subManifest.manifestName)
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -61,7 +77,6 @@ const ERD = () => {
   let fetchEntityPromises = [];
   const identifyEntities = async (subManifestData) => {
     
-    console.log(subManifestData)
       if (subManifestData?.length>1){
         for (const subManifest of subManifestData) {
           fetchEntities(subManifest)
@@ -75,7 +90,6 @@ const ERD = () => {
   //Takes in the list of objects from fetch entities, destructures them and displays it on the screen
   const destructureEntites =(entityData, manifestName)=>{
     if (selected===manifestName){
-      console.log(entityData)
     let entityName
     nodeDataArray = []
     entityData.map((entity=>{
@@ -97,29 +111,41 @@ const ERD = () => {
                     to = attribute.entity.source
                   }
                   linkDataArray.push({ from: definition.entityName, to: to, text: "1", toText: "1" })
-                  inheriteditems.push({ name: attribute.name, iskey: primaryBool })
+                  items.push({ name: attribute.name, iskey: primaryBool, fkey:true, dataType:attribute.dataType })
                 }
               }))
             }
             else{
-              items.push({name:attribute.name, isKey: primaryBool})
+              items.push({name:attribute.name, isKey: primaryBool,fkey:false, dataType:attribute.dataType})
             }
           
           
           }))
           // items.push({inheriteditems });
-          let obj = {
+          let limitedItems = items.slice(0, 5);
+          let limitedobj = {
+            key:entityName, visibility:true, location: new go.Point(250,250),
+            items:limitedItems,
+            inheriteditems
+          }
+          let fullobj= {
             key:entityName, visibility:true, location: new go.Point(250,250),
             items,
             inheriteditems
           }
-          nodeDataArray.push(obj)
+          nodeDataArray.push(limitedobj)
+          copies.push(fullobj)
+          console.log(nodeDataArray)
         }
         
         
       }))
       
     }))
+
+    
+    }
+    copies  = JSON.parse(JSON.stringify(copies))
     myDiagram.model = new go.GraphLinksModel(
       {
       copiesArrays: true,
@@ -127,7 +153,8 @@ const ERD = () => {
       nodeDataArray: nodeDataArray,
       linkDataArray: linkDataArray
       });
-    }
+    
+    
 
 
   }
@@ -141,7 +168,7 @@ const ERD = () => {
     // Initialize the diagram
     myDiagram = $(go.Diagram, 'myDiagramDiv', {
       allowDelete: false,
-      allowCopy: false,
+      allowCopy: true,
       'undoManager.isEnabled': true,
       layout: $(go.ForceDirectedLayout),
     });
@@ -150,6 +177,7 @@ const ERD = () => {
     const itemTempl = $(
       go.Panel,
       'Horizontal',
+      
       $(
         go.Shape,
         {
@@ -167,6 +195,7 @@ const ERD = () => {
         {
           font: '14px sans-serif',
           stroke: 'black',
+          
         },
         new go.Binding('text', 'name'),
         new go.Binding('stroke', '', (n) => (myDiagram.model.modelData.darkMode ? '#f5f5f5' : '#000000'))
@@ -178,112 +207,128 @@ const ERD = () => {
 
     myDiagram.nodeTemplate =
     $(go.Node, "Auto",
+    {
+      selectionAdorned: true,
+      resizable: true,
+      layoutConditions: go.Part.LayoutStandard & ~go.Part.LayoutNodeSized,
+      fromSpot: go.Spot.LeftRightSides,
+      toSpot: go.Spot.LeftRightSides,
+      isShadowed: true,
+      shadowOffset: new go.Point(4, 4),
+      shadowColor: "#919cab"
+    },
+    new go.Binding("location", "location").makeTwoWay(),
+    // Define the node's outer shape, which will surround the Table
+    $(go.Shape, "Rectangle",
       {
-        selectionAdorned: true,
-        resizable: true,
-        layoutConditions: go.Part.LayoutStandard & ~go.Part.LayoutNodeSized,
-        fromSpot: go.Spot.LeftRightSides,
-        toSpot: go.Spot.LeftRightSides,
-        isShadowed: true,
-        shadowOffset: new go.Point(4, 4),
-        shadowColor: "#919cab"
+        stroke: "#e8f1ff",
+        strokeWidth: 3,
+        // Set the width and height of the rectangle node
+        width: 280, 
       },
-      new go.Binding("location", "location").makeTwoWay(),
-      // whenever the PanelExpanderButton changes the visible property of the "LIST" panel,
-      // clear out any desiredSize set by the ResizingTool.
-      new go.Binding("desiredSize", "visible", v => new go.Size(NaN, NaN)).ofObject("LIST"),
-      // define the node's outer shape, which will surround the Table
-      $(go.Shape, "RoundedRectangle",
-        { stroke: "#e8f1ff", strokeWidth: 3 },
-        new go.Binding("fill", "", n => (myDiagram.model.modelData.darkMode) ? "#4a4a4a" : "#f7f9fc")
-      ),
-      $(go.Panel, "Table",
-        { margin: 8, stretch: go.GraphObject.Fill, width: 160 },
-        $(go.RowColumnDefinition, { row: 0, sizing: go.RowColumnDefinition.None }),
-        // the table header
-        $(go.TextBlock,
-          {
-            row: 0, alignment: go.Spot.Center,
-            margin: new go.Margin(0, 24, 0, 2),  // leave room for Button
-            font: "bold 16px sans-serif"
-          },
-          new go.Binding("text", "key"),
-          new go.Binding("stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
-        ),
-        // the collapse/expand button
-        $("PanelExpanderButton", "LIST",
-          { row: 0, alignment: go.Spot.TopRight },
-          new go.Binding("ButtonIcon.stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
-        ),
-        // the list of Panels, each showing an attribute
-        $(go.Panel, "Table",
-          {
-            name: "LIST",
-            row: 1,
-            padding: 3,
-            alignment: go.Spot.TopLeft,
-            defaultAlignment: go.Spot.Left,
-            stretch: go.GraphObject.Horizontal,
-            itemTemplate: itemTempl,
+      new go.Binding("fill", "", n => (myDiagram.model.modelData.darkMode) ? "#4a4a4a" : "#f7f9fc")
+    ),
+    // ... Other node template code ...
+  $(go.Panel, "Table",
+    { margin: 8, stretch: go.GraphObject.Fill, width: 260 },
+    $(go.RowColumnDefinition, { row: 0, sizing: go.RowColumnDefinition.None }),
+    // the table header
+    $(go.TextBlock,
+      {
+        row: 0, alignment: go.Spot.Center,
+        margin: new go.Margin(0, 24, 0, 2),  // leave room for Button
+        font: "bold 20px sans-serif",
+      },
+      new go.Binding("text", "key"),
+      new go.Binding("stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
+    ),
+    // the collapse/expand button
+    $("PanelExpanderButton", "LIST",
+      { row: 0, alignment: go.Spot.TopRight },
+      new go.Binding("ButtonIcon.stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
+    ),
+    // the list of Panels, each showing an attribute
+    $(go.Panel, "Table",
+      {
+        name: "LIST",
+        row: 1,
+        padding: 3,
+        alignment: go.Spot.TopLeft,
+        defaultAlignment: go.Spot.Left,
+        stretch: go.GraphObject.Horizontal,
+        itemTemplate: itemTempl,
+        margin: new go.Margin(0, 0, 0, 8)
+        
+      }
+    ),
+    $(go.Shape, "LineH",  // Horizontal line shape
+  {
+    row: 0, // Place the line in row 2, which is below the "Attributes" section
+    margin: new go.Margin(14, 0, 0, 0),
+    width: 260, // Set the width of the line as needed
+    strokeWidth: 1, // Set the line thickness as needed
+    stroke: "#000000", // Set the line color
+  }
+),
+    $(go.TextBlock,
+      {
+        font: "bold 15px sans-serif",
+        text: "Attributes",
+        row: 1,
+        alignment: go.Spot.TopLeft,
+        margin: new go.Margin(8, 0, 0, 0),
+        width:200
+      },
+      new go.Binding("stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
+    ),
+    $("PanelExpanderButton", "NonInherited", // the name of the element whose visibility this button toggles
+      { row: 1, column: 1 },
+      new go.Binding("ButtonIcon.stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
+    ),
+    $(go.Panel, "Vertical",
+      {
+        name: "NonInherited",
+        alignment: go.Spot.TopLeft,
+        defaultAlignment: go.Spot.Left,
+        itemTemplate: itemTempl,
+        row: 2
+      },
+      new go.Binding("itemArray", "items") // Display items array
+    )),
+    $(
+      go.Panel,
+      'Auto',
+      {
+        alignment: go.Spot.Bottom,
+        alignmentFocus: go.Spot.Bottom,
+        // margin: new go.Margin(0, 0, 2, 0),
+      },
+      $(
+        go.TextBlock,
+        {
+          text: "", // The text will be set via Binding
+          font: "bold 12px sans-serif",
+          alignment: go.Spot.Center,
+          alignmentFocus: go.Spot.Center,
+          stroke: "black"
+        },
+        new go.Binding("text", "", function(object) {
+          const originalData = copies.flat().find(entity => entity.key === object.part.data.key);
+          if (originalData.items.length>5){
+            return object.part.data.selectedButtonKey || "Show More";
           }
-        ),
-        $(go.TextBlock,
-          {
-            font: "bold 15px sans-serif",
-            text: "Attributes",
-            row: 1,
-            alignment: go.Spot.TopLeft,
-            margin: new go.Margin(8, 0, 0, 0),
-          },
-          new go.Binding("stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
-        ),
-        $("PanelExpanderButton", "NonInherited", // the name of the element whose visibility this button toggles
-          { row: 1, column: 1 },
-          new go.Binding("ButtonIcon.stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
-        ),
-        $(go.Panel, "Vertical",
-          {
-            name: "NonInherited",
-            alignment: go.Spot.TopLeft,
-            defaultAlignment: go.Spot.Left,
-            itemTemplate: itemTempl,
-            row: 2
-          },
-          new go.Binding("itemArray", "items") // Display items array
-        ),
-  
-        $(go.TextBlock,
-          {
-            font: "bold 15px sans-serif",
-            text: "Foreign Keys",
-            row: 3,
-            alignment: go.Spot.TopLeft,
-            margin: new go.Margin(8, 0, 0, 0),
-          },
-          new go.Binding("visible", "visibility", Boolean),
-          new go.Binding("stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
-        ),
-        $("PanelExpanderButton", "Inherited", // the name of the element whose visibility this button toggles
-          {
-            row: 3,
-            column: 1,
-          },
-          new go.Binding("visible", "visibility", Boolean),
-          new go.Binding("ButtonIcon.stroke", "", n => (myDiagram.model.modelData.darkMode) ? "#d6d6d6" : "#000000")
-        ),
-        $(go.Panel, "Vertical",
-          {
-            name: "Inherited",
-            alignment: go.Spot.TopLeft,
-            defaultAlignment: go.Spot.Left,
-            itemTemplate: itemTempl,
-            row: 4
-          },
-          new go.Binding("itemArray", "inheriteditems") // Display inheriteditems array
-        )
-      )
-    );
-  
+          else{
+            return null
+          }
+          
+        }).ofObject(),
+      ),
+      {
+        click: (e, obj) => showMore(obj.part.data)
+      }
+    )
+  );
+    
     
     
     // var linkDataArray = [
@@ -298,7 +343,6 @@ const ERD = () => {
     )
       .then((response) => response.json())
       .then((jsonData) => {
-        console.log(jsonData)
         if (jsonData?.subManifests?.length>0){
           fetchSubManifests(jsonData.subManifests)
         }
@@ -318,15 +362,8 @@ const ERD = () => {
     
 
     // ... Define other templates and model data for your ER Diagram ...
-    
-    // myDiagram.model = new go.GraphLinksModel(
-    //         {
-    //         copiesArrays: true,
-    //         copiesArrayObjects: true,
-    //         nodeDataArray: nodeDataArray,
-    //         linkDataArray: linkDataArray
-    //         });
-    // myDiagram.model.modelData.darkMode = false;
+  
+    myDiagram.model.modelData.darkMode = false;
 
     // When the component unmounts, make sure to clean up the diagram
     return () => {
@@ -336,13 +373,13 @@ const ERD = () => {
   }, [selected]);
 
   return (
-    <div>
+    <div className="erd-container">
       <h1>Entity-Relationship Diagram</h1>
-      
       {options.length>0?
       
       options.map((option=>{
       return(
+
       <label>
         <input
           type="checkbox"
